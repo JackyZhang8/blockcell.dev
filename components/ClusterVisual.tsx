@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { StageType } from '../App';
 
 const CENTER = 300; // Center point of the 600x600 container
@@ -63,6 +63,12 @@ const BEAM_TRAVEL_TIME = "1.2s";
 const BEAM_FADE_TIME = "1.5s";
 const BEAM_COLOR = "#00ff9d";      // 亮绿色
 const BEAM_GLOW = "#22d3aa";       // 柔和绿色
+
+const HOVER_TRANSITION_MS = 520;
+const HOVER_SCALE_TRANSITION = 'transform 0.55s cubic-bezier(0.16, 1, 0.3, 1)';
+
+const HOVER_BURST_COOLDOWN_MS = 1200;
+const NEAREST_RING_TOLERANCE = 1.12;
 
 const TransientLinks = React.memo(({ pulses }: { pulses: any[] }) => {
     const [nowMs, setNowMs] = useState<number>(() => Date.now());
@@ -143,15 +149,19 @@ const TransientLinks = React.memo(({ pulses }: { pulses: any[] }) => {
 });
 
 // 3. Individual Unit - 与顶部 Logo 相同的多层旋转形态
-const HexagonNode = React.memo(({ isActive, activationType, index, x, y, scale }: { 
-    isActive: boolean; 
+const HexagonNode = React.memo(({ isActive, isHovered, activationType, index, x, y, scale, onHoverChange }: { 
+    isActive: boolean;
+    isHovered: boolean;
     activationType?: 'source' | 'target' | 'both';
     index: number; 
     x: number; 
     y: number; 
-    scale: number 
+    scale: number;
+    onHoverChange?: (hovered: boolean) => void;
 }) => {
-    const finalScale = scale * (isActive ? 1.15 : 1);
+    const finalScale = scale * ((isActive || isHovered) ? 1.15 : 1);
+    const coreFill = (isActive || isHovered) ? BEAM_COLOR : "#ea580c";
+    const isLit = isActive || isHovered;
     
     return (
         <div 
@@ -160,8 +170,27 @@ const HexagonNode = React.memo(({ isActive, activationType, index, x, y, scale }
         >
             <div 
                 className="relative w-24 h-24 flex items-center justify-center"
-                style={{ transform: `scale(${finalScale})`, transition: 'transform 0.3s ease-out' }}
+                style={{ transform: `scale(${finalScale})`, transition: HOVER_SCALE_TRANSITION, cursor: 'pointer' }}
+                onMouseEnter={() => onHoverChange?.(true)}
+                onMouseLeave={() => onHoverChange?.(false)}
             >
+                <div
+                    className={`absolute inset-0 rounded-full transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}
+                    style={{
+                        transitionDuration: `${HOVER_TRANSITION_MS}ms`,
+                        boxShadow: '0 0 30px rgba(0,255,157,0.16), 0 0 60px rgba(0,255,157,0.08)'
+                    }}
+                />
+
+                <div
+                    className={`absolute inset-0 rounded-full transition-opacity ${isHovered ? 'opacity-100' : 'opacity-0'}`}
+                    style={{ transitionDuration: `${HOVER_TRANSITION_MS}ms` }}
+                >
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 rounded-full bg-[#00ff9d]/70 animate-pulse" />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 rounded-full bg-[#00ff9d]/70 animate-pulse" style={{ transform: 'translate(-50%, -50%) translateX(18px)', animationDelay: '120ms' }} />
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-1 h-1 rounded-full bg-[#00ff9d]/70 animate-pulse" style={{ transform: 'translate(-50%, -50%) translateY(-18px)', animationDelay: '240ms' }} />
+                </div>
+
                 {/* 旋转容器 - 与 Logo 相同 */}
                 <div className="relative w-full h-full animate-[spin_20s_linear_infinite]">
                     
@@ -190,12 +219,13 @@ const HexagonNode = React.memo(({ isActive, activationType, index, x, y, scale }
                     </div>
 
                     {/* Inner Core - 激活时变绿色并脉冲 */}
-                    <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 ${isActive ? 'animate-pulse' : ''}`}>
+                    <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 ${isLit ? 'animate-pulse' : ''}`}>
                         <svg width="32" height="37" viewBox="0 0 100 116" fill="none">
                             <path 
                                 d="M50 0L93.3013 25V75L50 100L6.69873 75V25L50 0Z" 
-                                fill={isActive ? BEAM_COLOR : "#ea580c"}
-                                className={isActive ? 'drop-shadow-[0_0_12px_rgba(0,255,157,0.8)]' : 'opacity-60'}
+                                fill={coreFill}
+                                className={isLit ? 'drop-shadow-[0_0_12px_rgba(0,255,157,0.45)]' : 'opacity-60'}
+                                style={{ transition: `fill ${HOVER_TRANSITION_MS}ms ease-out` }}
                             />
                         </svg>
                     </div>
@@ -204,10 +234,10 @@ const HexagonNode = React.memo(({ isActive, activationType, index, x, y, scale }
                 {/* ID Label */}
                 <div 
                     className={`absolute -bottom-8 left-1/2 -translate-x-1/2 text-[9px] font-mono tracking-widest whitespace-nowrap
-                        ${isActive ? 'font-bold' : 'text-slate-600 opacity-0 md:opacity-100'}
+                        ${isLit ? 'font-bold' : 'text-slate-600 opacity-0 md:opacity-100'}
                         ${scale < 0.7 ? 'opacity-0' : ''}
                     `}
-                    style={{ color: isActive ? BEAM_COLOR : undefined, transition: 'color 0.3s' }}
+                    style={{ color: isLit ? BEAM_COLOR : undefined, transition: 'color 0.45s ease-out' }}
                 >
                     CELL_{index.toString().padStart(2, '0')}
                 </div>
@@ -225,9 +255,20 @@ export const ClusterVisual: React.FC<{ stage: StageType }> = ({ stage }) => {
   // activeNodes 现在存储 { id, type } 对象以区分源和目标
   const [activeNodeMap, setActiveNodeMap] = useState<Map<number, 'source' | 'target' | 'both'>>(new Map());
   const [pulses, setPulses] = useState<any[]>([]);
+  const [hoveredNodeId, setHoveredNodeId] = useState<number | null>(null);
+
+  const hoverBurstLastFiredAtRef = useRef<Map<number, number>>(new Map());
+  const hoverBurstTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // 1. Memoize Nodes
   const nodes = useMemo(() => getNodesForStage(stage), [stage]);
+
+  useEffect(() => {
+    return () => {
+      hoverBurstTimeoutsRef.current.forEach((t) => clearTimeout(t));
+      hoverBurstTimeoutsRef.current = [];
+    };
+  }, []);
 
   // 2. Memoize Connections
   const connections = useMemo(() => {
@@ -255,6 +296,86 @@ export const ClusterVisual: React.FC<{ stage: StageType }> = ({ stage }) => {
   }, [nodes, stage]);
 
   const scale = stage === 'single' ? 1.8 : stage === 'cluster' ? 1 : 0.65;
+
+  const fireHoverBurst = (sourceNodeId: number) => {
+    if (stage === 'single') return;
+
+    const now = Date.now();
+    const last = hoverBurstLastFiredAtRef.current.get(sourceNodeId) ?? 0;
+    if (now - last < HOVER_BURST_COOLDOWN_MS) return;
+    hoverBurstLastFiredAtRef.current.set(sourceNodeId, now);
+
+    const source = nodes.find((n) => n.id === sourceNodeId);
+    if (!source) return;
+
+    const distances = nodes
+      .filter((n) => n.id !== sourceNodeId)
+      .map((n) => ({ node: n, dist: Math.hypot(n.x - source.x, n.y - source.y) }))
+      .filter((d) => d.dist > 1);
+
+    if (distances.length === 0) return;
+
+    let minDist = Infinity;
+    for (const d of distances) {
+      if (d.dist < minDist) minDist = d.dist;
+    }
+
+    const ringTargets = distances
+      .filter((d) => d.dist <= minDist * NEAREST_RING_TOLERANCE)
+      .map((d) => d.node);
+
+    if (ringTargets.length === 0) return;
+
+    setActiveNodeMap((prev) => {
+      const next = new Map(prev);
+      next.set(sourceNodeId, 'source');
+      return next;
+    });
+
+    const createdAt = Date.now();
+    const newPulses = ringTargets.map((to) => ({
+      id: createdAt + Math.random(),
+      from: source,
+      to,
+      color: BEAM_COLOR,
+      createdAt
+    }));
+
+    setPulses((prev) => [...(prev || []), ...newPulses]);
+
+    const fadeTimeout = setTimeout(() => {
+      const ids = new Set(newPulses.map((p) => p.id));
+      setPulses((prev) => prev.filter((p) => !ids.has(p.id)));
+    }, parseFloat(BEAM_FADE_TIME) * 1000 + 100);
+    hoverBurstTimeoutsRef.current.push(fadeTimeout);
+
+    const arrivalTimeout = setTimeout(() => {
+      setActiveNodeMap((prev) => {
+        const next = new Map(prev);
+        for (const t of ringTargets) next.set(t.id, 'target');
+        return next;
+      });
+    }, BEAM_TRAVEL_MS);
+    hoverBurstTimeoutsRef.current.push(arrivalTimeout);
+
+    const sourceOffTimeout = setTimeout(() => {
+      setActiveNodeMap((prev) => {
+        const next = new Map(prev);
+        next.delete(sourceNodeId);
+        return next;
+      });
+    }, BEAM_TRAVEL_MS + 300);
+    hoverBurstTimeoutsRef.current.push(sourceOffTimeout);
+
+    const targetsOffTimeout = setTimeout(() => {
+      setActiveNodeMap((prev) => {
+        const next = new Map(prev);
+        for (const t of ringTargets) next.delete(t.id);
+        return next;
+      });
+    }, BEAM_TRAVEL_MS + 900);
+    hoverBurstTimeoutsRef.current.push(targetsOffTimeout);
+  };
 
   // 3. Effects Loop - 链式传输机制：节点接收光点后继续传输
   useEffect(() => {
@@ -382,7 +503,16 @@ export const ClusterVisual: React.FC<{ stage: StageType }> = ({ stage }) => {
                     y={node.y}
                     scale={scale}
                     isActive={activeNodeMap.has(node.id)}
+                    isHovered={hoveredNodeId === node.id}
                     activationType={activeNodeMap.get(node.id)}
+                    onHoverChange={(hovered) => {
+                        if (hovered) {
+                            setHoveredNodeId(node.id);
+                            fireHoverBurst(node.id);
+                            return;
+                        }
+                        setHoveredNodeId((prev) => (prev === node.id ? null : prev));
+                    }}
                 />
             ))}
 
